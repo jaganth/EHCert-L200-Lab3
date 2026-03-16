@@ -4,7 +4,6 @@ using Azure.Messaging.EventHubs.Consumer;
 using Azure.Messaging.EventHubs.Producer;
 using System;
 using System.Collections.Generic;
-using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,7 +20,6 @@ namespace Throttle
 
         static void Main(string[] args)
         {
-            ServicePointManager.DefaultConnectionLimit = 2000;
             ThreadPool.SetMaxThreads(1024, 1024);
 
             var tasks = new List<Task>();
