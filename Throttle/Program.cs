@@ -1,11 +1,10 @@
-﻿using Microsoft.ServiceBus;
-using Microsoft.ServiceBus.Messaging;
+﻿using Azure.Identity;
+using Azure.Messaging.EventHubs;
+using Azure.Messaging.EventHubs.Consumer;
+using Azure.Messaging.EventHubs.Producer;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net;
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,10 +13,12 @@ namespace Throttle
 {
     class Program
     {
-        static string connectionString = "[REPLACE-WITH-CONNECTION-STRING]";
+        // Replace with your Event Hub fully qualified namespace (e.g., "mynamespace.servicebus.windows.net")
+        static string fullyQualifiedNamespace = "[REPLACE-WITH-NAMESPACE].servicebus.windows.net";
         static string eventhubName = "EHLab3Hub";
 
         static int degreeOfParallelism = 30;
+
         static void Main(string[] args)
         {
             ServicePointManager.DefaultConnectionLimit = 2000;
@@ -30,77 +31,67 @@ namespace Throttle
             }
 
             Task.WaitAll(tasks.ToArray());
-
         }
 
         static async Task EventHubSendReceiveLoopAsync()
         {
+            var credential = new DefaultAzureCredential();
 
-            var connectionStringBuilder = new ServiceBusConnectionStringBuilder(connectionString)
-            {
-                EntityPath = eventhubName
-            };
-
-            var settings = new MessagingFactorySettings();
-            settings.TransportType = Microsoft.ServiceBus.Messaging.TransportType.Amqp;
-            settings.TokenProvider = TokenProvider.CreateSharedAccessSignatureTokenProvider(connectionStringBuilder.SharedAccessKeyName, connectionStringBuilder.SharedAccessKey);
-            var factory = MessagingFactory.Create(connectionStringBuilder.Endpoints.FirstOrDefault<Uri>().ToString(), settings);
-            var ehClient = factory.CreateEventHubClient(eventhubName);
-
-            var sasTP = TokenProvider.CreateSharedAccessSignatureTokenProvider(connectionStringBuilder.SharedAccessKeyName, connectionStringBuilder.SharedAccessKey);
-            var token = SharedAccessSignatureTokenProvider.GetSharedAccessSignature(connectionStringBuilder.SharedAccessKeyName, connectionStringBuilder.SharedAccessKey,
-                connectionStringBuilder.Endpoints.FirstOrDefault<Uri>().ToString(), TimeSpan.FromHours(12));
+            await using var producer = new EventHubProducerClient(fullyQualifiedNamespace, eventhubName, credential);
+            await using var consumer = new EventHubConsumerClient(
+                EventHubConsumerClient.DefaultConsumerGroupName, fullyQualifiedNamespace, eventhubName, credential);
 
             await Task.WhenAll(
-                SendMessagesRestAync($"https://{connectionStringBuilder.Endpoints.FirstOrDefault<Uri>().Host}/{connectionStringBuilder.EntityPath}", token)
-                , ReceiveMessagesAsync(ehClient));
+                SendMessagesAsync(producer),
+                ReceiveMessagesAsync(consumer));
         }
 
-        static async Task SendMessagesRestAync(string endpoint, string token)
+        static async Task SendMessagesAsync(EventHubProducerClient producer)
         {
-            var httpClient = new HttpClient();
-            var authHeaderValue = AuthenticationHeaderValue.Parse(token);
             while (true)
             {
                 try
                 {
                     Console.WriteLine($"{DateTime.Now:s} Sending data...");
-                    var requestMessage = new HttpRequestMessage(HttpMethod.Post, $"{endpoint}/messages?timeout=60&api-version=2014-01");
-                    requestMessage.Headers.Authorization = authHeaderValue;
-                    
-                    //Batch of 100 messsages
-                    requestMessage.Content = new StringContent("[\r\n\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t}, \r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t},\r\n\t\t{\r\n\t\t\"Body\": \"Message1\",\r\n\t\t\"BrokerProperties\": {\r\n\t\t\t\"CorrelationId\",\r\n\t\t\t\"32119834-65f3-48c1-b366-619df2e4c400\"\r\n\t\t}\r\n\t}\r\n]", 
-                        Encoding.UTF8, "application/vnd.microsoft.servicebus.json");
 
-                    var response = await httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseContentRead);
-                    response.EnsureSuccessStatusCode();
-                }
-                catch (HttpRequestException httpRequestException)
-                {
-                    ConsoleColor currentForeground = Console.ForegroundColor;
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine(httpRequestException.Message);
-                    Console.ForegroundColor = currentForeground;
+                    using EventDataBatch batch = await producer.CreateBatchAsync();
+                    for (int i = 0; i < 100; i++)
+                    {
+                        var eventData = new EventData(Encoding.UTF8.GetBytes("Message1"));
+                        eventData.Properties["CorrelationId"] = "32119834-65f3-48c1-b366-619df2e4c400";
+                        batch.TryAdd(eventData);
+                    }
+
+                    await producer.SendAsync(batch);
                 }
                 catch (Exception exception)
                 {
+                    ConsoleColor currentForeground = Console.ForegroundColor;
+                    Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine(exception.Message);
+                    Console.ForegroundColor = currentForeground;
                 }
             }
         }
 
-        static async Task ReceiveMessagesAsync(EventHubClient client, string consumerGroup = "$default")
+        static async Task ReceiveMessagesAsync(EventHubConsumerClient consumer)
         {
-            var cg = client.GetConsumerGroup(consumerGroup);
-            var receiver0 = cg.CreateReceiver("0");
-            var receiver1 = cg.CreateReceiver("1");
+            await Task.WhenAll(
+                ReceiveFromPartitionAsync(consumer, "0"),
+                ReceiveFromPartitionAsync(consumer, "1"));
+        }
 
+        static async Task ReceiveFromPartitionAsync(EventHubConsumerClient consumer, string partitionId)
+        {
             while (true)
             {
                 try
                 {
                     Console.WriteLine($"{DateTime.Now:s} Receiving data...");
-                    await Task.WhenAll(receiver0.ReceiveAsync(), receiver1.ReceiveAsync());
+                    await foreach (var partitionEvent in consumer.ReadEventsFromPartitionAsync(partitionId, EventPosition.Latest))
+                    {
+                        // Event received - partitionEvent.Data contains the EventData payload
+                    }
                 }
                 catch (Exception exception)
                 {
