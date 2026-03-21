@@ -1,9 +1,11 @@
 using Azure.Identity;
+using Azure.Core;
 using Azure.Messaging.EventHubs;
 using Azure.Messaging.EventHubs.Consumer;
 using Azure.Messaging.EventHubs.Producer;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Threading;
@@ -13,15 +15,32 @@ namespace Throttle
 {
     class Program
     {
-        static string eventHubsNamespace = "yournamespace.servicebus.windows.net";
+        static string eventHubsNamespace = "<EventHub Namespace>.servicebus.windows.net";
         static string eventhubName = "EHLab3Hub";
+        static readonly DefaultAzureCredential credential = new DefaultAzureCredential(
+            new DefaultAzureCredentialOptions
+            {
+                CredentialProcessTimeout = TimeSpan.FromMinutes(2)
+            });
 
         static int degreeOfParallelism = 30;
+        static int receiveWorkerClaimed = 0;
+        static readonly string assignedPartitionId = (Process.GetCurrentProcess().Id % 2).ToString();
 
         static void Main(string[] args)
         {
             ServicePointManager.DefaultConnectionLimit = 2000;
             ThreadPool.SetMaxThreads(1024, 1024);
+
+            // Spread process startup auth calls to avoid simultaneous Azure CLI token timeouts.
+            int startupJitterMs = (Process.GetCurrentProcess().Id % 10) * 1000;
+            if (startupJitterMs > 0)
+            {
+                Console.WriteLine($"{DateTime.Now:s} Applying startup jitter: {startupJitterMs} ms");
+                Thread.Sleep(startupJitterMs);
+            }
+
+            WarmUpCredentialAsync().GetAwaiter().GetResult();
 
             var tasks = new List<Task>();
             for (int i = 0; i < degreeOfParallelism; i++)
@@ -34,13 +53,46 @@ namespace Throttle
 
         static async Task EventHubSendReceiveLoopAsync()
         {
-            var credential = new DefaultAzureCredential();
             var producerClient = new EventHubProducerClient(eventHubsNamespace, eventhubName, credential);
             var consumerClient = new EventHubConsumerClient(EventHubConsumerClient.DefaultConsumerGroupName, eventHubsNamespace, eventhubName, credential);
 
-            await Task.WhenAll(
-                SendMessagesAsync(producerClient),
-                ReceiveMessagesAsync(consumerClient));
+            // Keep receive path enabled, but only one worker per process owns receive links.
+            if (Interlocked.CompareExchange(ref receiveWorkerClaimed, 1, 0) == 0)
+            {
+                Console.WriteLine($"{DateTime.Now:s} Receive worker active on partition {assignedPartitionId}.");
+                await Task.WhenAll(
+                    SendMessagesAsync(producerClient),
+                    ReceiveMessagesAsync(consumerClient));
+            }
+            else
+            {
+                await SendMessagesAsync(producerClient);
+            }
+        }
+
+        static async Task WarmUpCredentialAsync()
+        {
+            Console.WriteLine($"{DateTime.Now:s} Warming up DefaultAzureCredential token cache...");
+
+            Exception lastException = null;
+            for (int attempt = 1; attempt <= 5; attempt++)
+            {
+                try
+                {
+                    await credential.GetTokenAsync(
+                        new TokenRequestContext(new[] { "https://eventhubs.azure.net/.default" }),
+                        CancellationToken.None);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    lastException = ex;
+                    Console.WriteLine($"{DateTime.Now:s} Token warm-up attempt {attempt} failed: {ex.Message}");
+                    await Task.Delay(TimeSpan.FromSeconds(attempt * 2));
+                }
+            }
+
+            throw lastException ?? new InvalidOperationException("Token warm-up failed.");
         }
 
         static async Task SendMessagesAsync(EventHubProducerClient producerClient)
@@ -83,10 +135,8 @@ namespace Throttle
             {
                 try
                 {
-                    Console.WriteLine($"{DateTime.Now:s} Receiving data...");
-                    await Task.WhenAll(
-                        ReceiveSingleMessageFromPartitionAsync(consumerClient, "0"),
-                        ReceiveSingleMessageFromPartitionAsync(consumerClient, "1"));
+                    Console.WriteLine($"{DateTime.Now:s} Receiving data from partition {assignedPartitionId}...");
+                    await ReceiveSingleMessageFromPartitionAsync(consumerClient, assignedPartitionId);
                 }
                 catch (Exception exception)
                 {
