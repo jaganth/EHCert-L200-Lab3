@@ -75,7 +75,7 @@ namespace Throttle
         {
             Console.WriteLine($"{DateTime.Now:s} Warming up DefaultAzureCredential token cache...");
 
-            Exception lastException = null;
+            Exception? lastException = null;
             for (int attempt = 1; attempt <= 5; attempt++)
             {
                 try
