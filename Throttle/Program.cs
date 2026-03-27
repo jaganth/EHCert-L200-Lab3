@@ -6,6 +6,7 @@ using Azure.Messaging.EventHubs.Producer;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
@@ -17,6 +18,7 @@ namespace Throttle
     {
         static string eventHubsNamespace = "<EventHub Namespace>.servicebus.windows.net";
         static string eventhubName = "EHLab3Hub";
+        static readonly string[] receivePartitionIds = new[] { "0", "1" };
         static readonly DefaultAzureCredential credential = new DefaultAzureCredential(
             new DefaultAzureCredentialOptions
             {
@@ -25,7 +27,6 @@ namespace Throttle
 
         static int degreeOfParallelism = 30;
         static int receiveWorkerClaimed = 0;
-        static readonly string assignedPartitionId = (Process.GetCurrentProcess().Id % 2).ToString();
 
         static void Main(string[] args)
         {
@@ -59,7 +60,7 @@ namespace Throttle
             // Keep receive path enabled, but only one worker per process owns receive links.
             if (Interlocked.CompareExchange(ref receiveWorkerClaimed, 1, 0) == 0)
             {
-                Console.WriteLine($"{DateTime.Now:s} Receive worker active on partition {assignedPartitionId}.");
+                Console.WriteLine($"{DateTime.Now:s} Receive worker active on partitions {string.Join(", ", receivePartitionIds)}.");
                 await Task.WhenAll(
                     SendMessagesAsync(producerClient),
                     ReceiveMessagesAsync(consumerClient));
@@ -135,8 +136,8 @@ namespace Throttle
             {
                 try
                 {
-                    Console.WriteLine($"{DateTime.Now:s} Receiving data from partition {assignedPartitionId}...");
-                    await ReceiveSingleMessageFromPartitionAsync(consumerClient, assignedPartitionId);
+                    Console.WriteLine($"{DateTime.Now:s} Receiving data from partitions {string.Join(", ", receivePartitionIds)}...");
+                    await Task.WhenAll(receivePartitionIds.Select(partitionId => ReceiveSingleMessageFromPartitionAsync(consumerClient, partitionId)));
                 }
                 catch (Exception exception)
                 {
